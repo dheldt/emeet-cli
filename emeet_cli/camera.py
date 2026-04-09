@@ -64,14 +64,16 @@ def _iter_linux_video_devices():
 
     for entry in sorted(sys_class.glob("video*")):
         try:
-            index = int(entry.name.replace("video", "", 1))
+            node_index = int(entry.name.replace("video", "", 1))
         except ValueError:
             continue
 
         name = (entry / "name").read_text(encoding="utf-8").strip() if (entry / "name").exists() else entry.name
         modalias = (entry / "device" / "modalias").read_text(encoding="utf-8").strip() if (entry / "device" / "modalias").exists() else ""
+        sysfs_index = int((entry / "index").read_text(encoding="utf-8").strip()) if (entry / "index").exists() else 0
         yield {
-            "index": index,
+            "index": node_index,
+            "sysfs_index": sysfs_index,
             "name": name,
             "path": f"/dev/{entry.name}",
             "modalias": modalias,
@@ -100,7 +102,7 @@ def _linux_pixy_device():
         modalias = device["modalias"].lower()
         if "emeet" not in device_name and "v328f" not in modalias and "p00c0" not in modalias:
             continue
-        if device["index"] == 0:
+        if device["sysfs_index"] == 0:
             return device
     for device in _iter_linux_video_devices() or ():
         device_name = device["name"].lower()
@@ -358,7 +360,7 @@ def list_cameras() -> list[dict]:
     if _PLATFORM == "Linux":
         found = []
         for device in _iter_linux_video_devices() or ():
-            if device["index"] != 0:
+            if device["sysfs_index"] != 0:
                 continue
             info = _probe_camera(device["index"], device["name"])
             if info is not None:
