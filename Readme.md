@@ -20,9 +20,11 @@ The eMeet Pixy is a USB UVC-class camera with PTZ (pan/tilt/zoom) capabilities. 
 
 ## Requirements
 
-- macOS 12+, Python 3.10+
+- macOS 12+ or Linux, Python 3.10+
 - eMeet Pixy connected via USB
-- [libusb](https://libusb.info/) for UVC control: `brew install libusb`
+- [libusb](https://libusb.info/) for UVC control
+  - macOS: `brew install libusb`
+  - Debian/Ubuntu: `sudo apt install libusb-1.0-0`
 
 ## Installation
 
@@ -32,7 +34,7 @@ cd emeet-cli
 pip install -e .
 ```
 
-The `emeet` command is installed to `~/Library/Python/3.x/bin/`. Add it to your PATH if needed:
+On macOS, the `emeet` command is often installed to `~/Library/Python/3.x/bin/`. Add it to your PATH if needed:
 
 ```bash
 export PATH="$HOME/Library/Python/3.13/bin:$PATH"
@@ -112,7 +114,7 @@ emeet tilt 70 && emeet zoom 60 && emeet capture -o shot.jpg
 The eMeet Pixy is a standard UVC-class USB device. This tool:
 
 - **PTZ control** — sends UVC `CT_ZOOM_ABSOLUTE_CONTROL` (selector `0x0B`) and `CT_PAN_TILT_ABSOLUTE_CONTROL` (selector `0x0D`) SET_CUR/GET_CUR requests via `pyusb` + `libusb`. The Camera Terminal unit ID and VideoControl interface number are parsed from the live USB descriptors.
-- **Image capture** — uses OpenCV with the `CAP_AVFOUNDATION` backend to grab a frame and write it to disk.
+- **Image capture** — uses OpenCV with the native backend for the platform (`CAP_AVFOUNDATION` on macOS, `CAP_V4L2` on Linux) to grab a frame and write it to disk.
 
 User-facing levels (0–100) are mapped to the device's own min/max range, which is queried at runtime via GET_MIN/GET_MAX.
 
@@ -137,7 +139,7 @@ python3 -m emeet_cli.cli --help
 
 - Pan/tilt range depends on what the eMeet Pixy hardware physically supports
 - Close eMeet Studio (and Zoom/Teams) before running — UVC control transfers may be blocked while another app holds the camera
-- Tested on macOS only; Linux support via V4L2 is possible but not implemented
+- On Linux, camera capture relies on V4L2 device nodes being accessible to your user account
 
 ## License
 

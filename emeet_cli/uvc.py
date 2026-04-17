@@ -20,9 +20,12 @@ libusb_control_transfer() directly via ctypes to avoid the spurious claim.
 
 import ctypes
 import ctypes.util
+import platform
 import struct
 import usb.core
 import usb.util
+
+_PLATFORM = platform.system()
 
 # UVC device identifiers
 EMEET_VENDOR_ID       = 0x328F
@@ -58,10 +61,14 @@ SC_VIDEOCONTROL = 0x01
 # ---------------------------------------------------------------------------
 
 def _load_libusb():
-    """Load libusb-1.0 shared library, checking Homebrew path first."""
+    """Load libusb-1.0 shared library on macOS/Linux."""
     for path in (
         "/opt/homebrew/lib/libusb-1.0.dylib",
         "/usr/local/lib/libusb-1.0.dylib",
+        "/usr/lib/x86_64-linux-gnu/libusb-1.0.so",
+        "/usr/lib/aarch64-linux-gnu/libusb-1.0.so",
+        "/usr/lib64/libusb-1.0.so",
+        "/usr/lib/libusb-1.0.so",
         ctypes.util.find_library("usb-1.0"),
     ):
         if path:
@@ -69,7 +76,10 @@ def _load_libusb():
                 return ctypes.CDLL(path)
             except OSError:
                 continue
-    raise RuntimeError("libusb-1.0 not found. Install with: brew install libusb")
+    raise RuntimeError(
+        "libusb-1.0 not found. Install it with your system package manager "
+        "(for example: 'brew install libusb' or 'sudo apt install libusb-1.0-0')."
+    )
 
 
 _lib = _load_libusb()
@@ -123,6 +133,22 @@ def _ctrl_transfer_raw(dev, bm_request_type, b_request, w_value, w_index,
         return None
 
 
+def _ctrl_transfer_pyusb(dev, bm_request_type, b_request, w_value, w_index,
+                         data_or_length, timeout=5000):
+    """Send a USB control transfer through pyusb."""
+    result = dev.ctrl_transfer(
+        bm_request_type,
+        b_request,
+        w_value,
+        w_index,
+        data_or_length,
+        timeout=timeout,
+    )
+    if bm_request_type & 0x80:
+        return bytes(result)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Device / descriptor helpers
 # ---------------------------------------------------------------------------
@@ -171,6 +197,42 @@ def find_camera_terminal(dev):
     raise RuntimeError("Camera Terminal not found in UVC descriptors.")
 
 
+def prepare_device(dev, intf_num):
+    """
+    Prepare the device for UVC control transfers.
+
+    On Linux, detach the kernel driver from the VideoControl interface so
+    pyusb can claim it for class-specific control requests.
+    """
+    detached = False
+
+    if _PLATFORM == "Linux":
+        try:
+            if dev.is_kernel_driver_active(intf_num):
+                dev.detach_kernel_driver(intf_num)
+                detached = True
+        except (NotImplementedError, usb.core.USBError):
+            detached = False
+
+    return {"intf_num": intf_num, "detached": detached}
+
+
+def release_device(dev, state):
+    """Undo any Linux-specific preparation done in prepare_device()."""
+    intf_num = state["intf_num"]
+
+    try:
+        usb.util.release_interface(dev, intf_num)
+    except usb.core.USBError:
+        pass
+
+    if _PLATFORM == "Linux" and state["detached"]:
+        try:
+            dev.attach_kernel_driver(intf_num)
+        except usb.core.USBError:
+            pass
+
+
 def _windex(unit_id, intf_num):
     return (unit_id << 8) | intf_num
 
@@ -181,20 +243,14 @@ def _windex(unit_id, intf_num):
 
 def ctrl_set(dev, unit_id, intf_num, selector, data: bytes):
     """Send a UVC SET_CUR control request."""
-    _ctrl_transfer_raw(
-        dev, SET_REQUEST_TYPE, SET_CUR,
-        (selector << 8), _windex(unit_id, intf_num),
-        data,
-    )
+    transfer = _ctrl_transfer_raw if _PLATFORM == "Darwin" else _ctrl_transfer_pyusb
+    transfer(dev, SET_REQUEST_TYPE, SET_CUR, (selector << 8), _windex(unit_id, intf_num), data)
 
 
 def ctrl_get(dev, unit_id, intf_num, selector, length, request=GET_CUR):
     """Send a UVC GET_CUR/MIN/MAX control request, return bytes."""
-    return _ctrl_transfer_raw(
-        dev, GET_REQUEST_TYPE, request,
-        (selector << 8), _windex(unit_id, intf_num),
-        length,
-    )
+    transfer = _ctrl_transfer_raw if _PLATFORM == "Darwin" else _ctrl_transfer_pyusb
+    return transfer(dev, GET_REQUEST_TYPE, request, (selector << 8), _windex(unit_id, intf_num), length)
 
 
 # ---------------------------------------------------------------------------
