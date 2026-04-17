@@ -153,6 +153,7 @@ def zoom_set(level: int):
         _linux_set(v4l2.V4L2_CID_ZOOM_ABSOLUTE, target)
         return
 
+    uvc = _require_uvc()
     with open_device() as (dev, tid, intf):
         z_min, z_max = uvc.get_zoom_range(dev, tid, intf)
         target = _scale(level, 0, 100, z_min, z_max)
@@ -171,6 +172,7 @@ def zoom_get() -> dict:
             "raw_max": ctrl["max"],
         }
 
+    uvc = _require_uvc()
     with open_device() as (dev, tid, intf):
         z_min, z_max = uvc.get_zoom_range(dev, tid, intf)
         current = uvc.get_zoom(dev, tid, intf)
@@ -203,6 +205,7 @@ def _pan_tilt_set(pan_level=None, tilt_level=None):
             _linux_set(v4l2.V4L2_CID_TILT_ABSOLUTE, new_tilt)
         return
 
+    uvc = _require_uvc()
     with open_device() as (dev, tid, intf):
         (p_min, p_max), (t_min, t_max) = uvc.get_pan_tilt_range(dev, tid, intf)
         current_pan, current_tilt = uvc.get_pan_tilt(dev, tid, intf)
@@ -235,6 +238,7 @@ def pan_tilt_get() -> dict:
             "tilt": {"current": _scale(tilt, tilt_ctrl["min"], tilt_ctrl["max"], 0, 100), "raw": tilt},
         }
 
+    uvc = _require_uvc()
     with open_device() as (dev, tid, intf):
         (p_min, p_max), (t_min, t_max) = uvc.get_pan_tilt_range(dev, tid, intf)
         pan, tilt = uvc.get_pan_tilt(dev, tid, intf)
@@ -255,6 +259,7 @@ def reset():
         _linux_set(v4l2.V4L2_CID_TILT_ABSOLUTE, (tilt_ctrl["min"] + tilt_ctrl["max"]) // 2)
         return
 
+    uvc = _require_uvc()
     with open_device() as (dev, tid, intf):
         z_min, _ = uvc.get_zoom_range(dev, tid, intf)
         uvc.set_zoom(dev, tid, intf, z_min)
